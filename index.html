@@ -188,13 +188,37 @@ body.present-mode #present-btn{background:var(--blue);color:#fff;border-color:va
 .veh-pop .meta{font-size:11px;color:var(--muted);line-height:1.6}
 
 #sidebar-toggle{display:none}
+#sheet-handle{display:none}
 @media (max-width:900px){
-  #kpis{grid-template-columns:repeat(2,1fr)}
-  :root{--side:320px}
-  #sidebar{position:absolute;left:0;top:0;bottom:0;transform:translateX(-100%);transition:.25s;z-index:70;box-shadow:var(--shadow)}
-  #sidebar.open{transform:translateX(0)}
-  #sidebar-toggle{display:flex;align-items:center;gap:6px;border:1.5px solid var(--line);background:#fff;
-    border-radius:10px;padding:8px 12px;font-weight:700;font-size:12px;color:var(--blue);cursor:pointer;flex:none}
+  #sidebar-toggle{display:none!important}
+  #body-row{position:relative}
+  #sidebar{
+    position:fixed;left:0;right:0;bottom:0;top:auto;width:100%;height:86vh;max-height:86vh;
+    background:#fff;border-radius:20px 20px 0 0;box-shadow:0 -14px 44px rgba(15,23,42,.28);
+    z-index:85;padding:0 18px 24px;overflow-y:hidden;
+    transform:translateY(calc(100% - 158px));
+    transition:transform .3s cubic-bezier(.22,.85,.3,1);
+  }
+  #sidebar.expanded{transform:translateY(0);overflow-y:auto;-webkit-overflow-scrolling:touch}
+  #sidebar.dragging{transition:none}
+  #sheet-handle{display:block;position:sticky;top:0;background:#fff;padding:10px 18px 6px;margin:0 -18px 10px;
+    cursor:grab;touch-action:none;z-index:2}
+  #sheet-handle .bar{display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px}
+  #sheet-handle .sheet-title{font-size:13px;font-weight:800;color:var(--ink);text-align:center}
+  #topbar{padding:10px 14px;gap:10px}
+  #topbar img.logo{height:34px}
+  #topbar .eyebrow{font-size:9.5px}
+  #topbar h1{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:1px 0}
+  #topbar .sub{display:none}
+  #status-pill{display:none}
+  #kpis{padding:10px 14px;gap:8px;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:132px;
+    overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .kpi{padding:9px 10px}
+  .kpi .v{font-size:19px}
+  .kpi .l{font-size:9px}
+}
+@media (max-width:420px){
+  #topbar img.logo{display:none}
 }
 </style>
 </head>
@@ -224,6 +248,7 @@ body.present-mode #present-btn{background:var(--blue);color:#fff;border-color:va
 
   <div id="body-row">
     <aside id="sidebar">
+      <div id="sheet-handle"><span class="bar"></span><div class="sheet-title">Filtres &amp; contrôles</div></div>
       <div class="side-block">
         <p class="side-title">Jour de la semaine</p>
         <div id="day-tabs"></div>
@@ -586,7 +611,7 @@ document.getElementById('logo-img').src = "data:image/jpeg;base64,"+LOGO_B64;
       playing=true; $('#play-btn').textContent='⏸';
       map.setView([49.05,2.10],11);
     });
-    $('#sidebar-toggle').addEventListener('click', ()=> $('#sidebar').classList.toggle('open'));
+    wireSheet();
     $('#present-btn').addEventListener('click', togglePresent);
     document.addEventListener('keydown', e=>{
       if(e.key.toLowerCase()==='p' && !['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)){
@@ -595,6 +620,61 @@ document.getElementById('logo-img').src = "data:image/jpeg;base64,"+LOGO_B64;
     });
     syncTimeUI();
   }
+  function wireSheet(){
+    const sheet = $('#sidebar'), handle = $('#sheet-handle');
+    if(!handle) return;
+    let startY=0, startTranslate=0, dragging=false, moved=false;
+    const collapsedPx = () => sheet.getBoundingClientRect().height - 158;
+
+    function getCurrentTranslate(){
+      const st = getComputedStyle(sheet).transform;
+      if(st && st !== 'none'){
+        const m = new DOMMatrixReadOnly(st);
+        return m.m42;
+      }
+      return sheet.classList.contains('expanded') ? 0 : collapsedPx();
+    }
+    function onDown(e){
+      dragging = true; moved = false;
+      startY = (e.touches ? e.touches[0].clientY : e.clientY);
+      startTranslate = getCurrentTranslate();
+      sheet.classList.add('dragging');
+    }
+    function onMove(e){
+      if(!dragging) return;
+      const y = (e.touches ? e.touches[0].clientY : e.clientY);
+      const dy = y - startY;
+      if(Math.abs(dy) > 4) moved = true;
+      let t = startTranslate + dy;
+      t = Math.max(0, Math.min(collapsedPx(), t));
+      sheet.style.transform = `translateY(${t}px)`;
+    }
+    function onUp(e){
+      if(!dragging) return;
+      dragging = false;
+      sheet.classList.remove('dragging');
+      sheet.style.transform = '';
+      const y = (e.changedTouches ? e.changedTouches[0].clientY : e.clientY);
+      const dy = y - startY;
+      if(!moved){
+        sheet.classList.toggle('expanded');
+      } else if(dy < -40){
+        sheet.classList.add('expanded');
+      } else if(dy > 40){
+        sheet.classList.remove('expanded');
+      } else {
+        // pas assez de mouvement : revient a l'etat le plus proche du point de depart
+        const cur = startTranslate + dy;
+        if(cur < collapsedPx()/2) sheet.classList.add('expanded');
+        else sheet.classList.remove('expanded');
+      }
+    }
+    handle.addEventListener('pointerdown', e=>{ handle.setPointerCapture(e.pointerId); onDown(e); });
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  }
+
   function togglePresent(){
     document.body.classList.toggle('present-mode');
     const on = document.body.classList.contains('present-mode');
